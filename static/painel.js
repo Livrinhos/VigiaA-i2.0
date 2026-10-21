@@ -53,7 +53,7 @@ function mostrarPessoas(pessoas) {
     const card = document.createElement("article");
     card.className = "pessoa";
     const titulo = document.createElement("h3");
-    titulo.textContent = "Pessoa " + pessoa.id + " · " + (pessoa.postura === "Em pe" ? "Em pé" : pessoa.postura || "Postura inconclusiva");
+    titulo.textContent = "Pessoa " + pessoa.id + " · " + (pessoa.situacao_rotulo || (pessoa.postura === "Em pe" ? "Em pé" : pessoa.postura || "Postura inconclusiva"));
     card.append(titulo);
     Object.entries(pessoa.epis).forEach(([item, estado]) => {
       const badge = document.createElement("span");
@@ -71,7 +71,9 @@ function mostrarPessoas(pessoas) {
     leitura.className = "muted small";
     const angulo = Number.isFinite(pessoa.postura_angulo)
       ? "Inclinação do tronco: " + pessoa.postura_angulo + "°. " : "";
-    if (!pessoa.postura) {
+    if (pessoa.situacao_motivo) {
+      leitura.textContent = pessoa.situacao_motivo + (pessoa.emergencia ? " Verificação humana pendente." : "");
+    } else if (!pessoa.postura) {
       leitura.textContent = angulo + (pessoa.postura_motivo || "Corpo sem visibilidade suficiente.");
     } else if (pessoa.postura === "Deitada") {
       leitura.textContent = angulo + (pessoa.queda_confirmada ? "Possível queda confirmada para alerta."
@@ -99,13 +101,16 @@ function mostrarEventos(eventos) {
   eventos.forEach((evento) => {
     const linha = area.insertRow();
     linha.insertCell().textContent = evento.data;
-    linha.insertCell().textContent = evento.motivo;
-    const link = document.createElement("a");
-    link.href = "/capturas/" + encodeURIComponent(evento.arquivo);
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = "Ver imagem";
-    linha.insertCell().append(link);
+    linha.insertCell().textContent = evento.motivo + (evento.confirmacao === 'verificacao_humana_pendente' ? ' · Verificação humana pendente.' : '');
+    const imagem = linha.insertCell();
+    if (evento.arquivo) {
+      const link = document.createElement("a");
+      link.href = "/capturas/" + encodeURIComponent(evento.arquivo);
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Ver imagem";
+      imagem.append(link);
+    } else imagem.textContent = "Imagem desativada";
     linha.insertCell().textContent = evento.email;
   });
 }

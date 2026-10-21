@@ -1,0 +1,5 @@
+# Windows x64, Python 3.12, PyTorch 2.6 com CUDA 12.4.
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+-r requirements.txt

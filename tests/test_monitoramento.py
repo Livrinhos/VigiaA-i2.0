@@ -87,8 +87,8 @@ class TestMotor(unittest.TestCase):
         na_mao = [{"classe": "capacete", "caixa": (150, 300, 250, 340)}]
         for instante in (0, 1.5, 3):
             pessoas, alertas = self.observar(motor, instante, epis=na_mao)
-        self.assertEqual(pessoas[0]["epis"]["capacete"], "possivel_ausencia")
-        self.assertEqual(len(alertas), 1)
+        self.assertEqual(pessoas[0]["epis"]["capacete"], "inconclusivo")
+        self.assertFalse(alertas)
 
     def test_modelo_ausente_regiao_oculta_e_classe_nao_suportada(self):
         for extras in ({"suportados": set()}, {"pontos": [{}]}):
@@ -101,11 +101,13 @@ class TestMotor(unittest.TestCase):
     def test_duas_pessoas_confirmam_sem_compartilhar_intervalo(self):
         motor = MotorAlertas()
         caixas = [CAIXA, (500, 60, 700, 460)]
+        negativos = [{'classe': 'no_helmet', 'caixa': (150, 65, 250, 115)},
+                     {'classe': 'no_helmet', 'caixa': (550, 65, 650, 115)}]
         for instante in (0, 1.5, 3):
-            _, alertas = self.observar(motor, instante, caixas=caixas)
+            _, alertas = self.observar(motor, instante, caixas=caixas, epis=negativos)
         self.assertEqual({a["pessoa_id"] for a in alertas}, {1, 2})
         motor.confirmador.marcar_alerta(alertas[0]["chaves"], 3)
-        _, seguintes = self.observar(motor, 4, caixas=caixas)
+        _, seguintes = self.observar(motor, 4, caixas=caixas, epis=negativos)
         self.assertEqual(len(seguintes), 1)
         self.assertNotEqual(seguintes[0]["pessoa_id"], alertas[0]["pessoa_id"])
 
@@ -131,7 +133,7 @@ class TestMotor(unittest.TestCase):
         deitada = corpo_visivel()
         deitada.update({11: (0.2, 0.4, 1), 12: (0.3, 0.4, 1),
                         23: (0.7, 0.45, 1), 24: (0.8, 0.45, 1)})
-        for instante in (0, 1, 2):
+        for instante in range(6):
             _, alertas = self.observar(motor, instante, pontos=[deitada], suportados=set())
         self.assertEqual([a["tipo"] for a in alertas], ["queda"])
 
@@ -160,10 +162,10 @@ class TestOculos(unittest.TestCase):
         self.assertEqual(pessoa["epis"]["oculos"], "inconclusivo")
         self.assertFalse(alertas)
 
-    def test_sem_deteccao_e_olhos_visiveis_confirma_possivel_ausencia(self):
+    def test_sem_deteccao_e_olhos_visiveis_nao_prova_ausencia(self):
         pessoa, alertas = self.avaliar()
-        self.assertEqual(pessoa["epis"]["oculos"], "possivel_ausencia")
-        self.assertEqual(len(alertas), 1)
+        self.assertEqual(pessoa["epis"]["oculos"], "inconclusivo")
+        self.assertFalse(alertas)
 
     def test_oculos_na_mao_ou_na_testa_nao_contam_como_uso(self):
         for caixa in ((150, 300, 250, 350), (150, 61, 250, 72)):
@@ -181,7 +183,7 @@ class TestOculos(unittest.TestCase):
 
     def test_tronco_cortado_nao_invalida_olhos_inteiros(self):
         caixa = (100, 60, 300, 720)
-        pessoa, _ = self.avaliar(pontos=corpo_visivel(), caixa=caixa)
+        pessoa, _ = self.avaliar([{'classe': 'no_goggle', 'caixa': (150, 110, 250, 145)}], pontos=corpo_visivel(), caixa=caixa)
         self.assertEqual(pessoa["epis"]["oculos"], "possivel_ausencia")
 
     def test_rosto_cortado_nao_confirma_ausencia_com_olhos_estimados(self):
@@ -293,7 +295,7 @@ class TestPainel(unittest.TestCase):
 
     def test_cooldown_so_e_marcado_se_a_imagem_for_salva(self):
         evento = {"tipo": "epi", "pessoa_id": 1, "chaves": [(1, "epi", "capacete")], "motivo": "teste"}
-        with patch("cv2.imwrite", return_value=False):
+        with patch("main.salvar_jpeg", side_effect=OSError('Disco indisponível')):
             self.monitor.alerta(np.zeros((20, 20, 3), dtype=np.uint8), evento, 1)
         self.assertFalse(self.monitor.eventos)
         self.assertTrue(self.monitor.motor.confirmador.pode_alertar(evento["chaves"][0], 2))
@@ -351,7 +353,7 @@ class TestPainel(unittest.TestCase):
 
             camera = CameraFake()
             mp_fake = SimpleNamespace(solutions=SimpleNamespace(pose=SimpleNamespace(Pose=lambda **_: PoseFake())))
-            with patch("main.abrir_camera", return_value=camera), patch.dict(
+            with patch('runtime_ia.opcoes_inferencia', return_value={'device': 'cpu', 'half': False, 'imgsz': 640}), patch("main.abrir_camera", return_value=camera), patch.dict(
                 "sys.modules", {"mediapipe": mp_fake, "ultralytics": SimpleNamespace(YOLO=carregar_modelo)}
             ), patch.object(monitor, "email") as email:
                 monitor.executar()

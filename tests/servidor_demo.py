@@ -37,7 +37,8 @@ class MonitorSimulado(Monitor):
                 cv2.rectangle(original, (310, 320), (340, 420), (120, 100, 80), -1)
                 cv2.rectangle(original, (360, 320), (390, 420), (120, 100, 80), -1)
                 agora = time.monotonic()
-                pessoas, alertas = self.processar_deteccoes(original, [(250, 60, 450, 440)], [pontos], [], agora)
+                negativos = [{'classe': 'no_helmet', 'caixa': (300, 70, 400, 110), 'confianca': .9}]
+                pessoas, alertas = self.processar_deteccoes(original, [(250, 60, 450, 440)], [pontos], negativos, agora)
                 anotado = original.copy()
                 cv2.rectangle(anotado, (250, 60), (450, 440), (80, 200, 120), 2)
                 self._publicar_frame(original, anotado, pessoas, 8)

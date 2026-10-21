@@ -1,10 +1,12 @@
-// Executa o controlador real com DOM mínimo e HTTP no servidor simulado.
-// Preparação: .\.venv\Scripts\python.exe tests/servidor_demo.py
+// Controlador real + rotas Flask via test_client, câmera simulada e SMTP bloqueado.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import test from "node:test";
 import { setTimeout as esperar } from "node:timers/promises";
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 
 class Elemento {
   constructor(tag = "div") {
@@ -32,7 +34,23 @@ class Elemento {
   addEventListener(evento, handler) { this.handlers.set(evento, handler); }
 }
 
-test("controles, confirmação por pessoa e coleta usando o JavaScript do painel", async () => {
+test("controles, confirmação por pessoa e coleta usando o JavaScript do painel", async (t) => {
+  const python = process.env.VIGIAAI_PYTHON || fileURLToPath(new URL('../.venv/Scripts/python.exe', import.meta.url));
+  const ponte = spawn(python, [fileURLToPath(new URL('api_painel.py', import.meta.url))], { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
+  const pendentes = new Map();
+  let proximo = 1;
+  createInterface({ input: ponte.stdout }).on('line', (linha) => {
+    const r = JSON.parse(linha);
+    const resolver = pendentes.get(r.id);
+    pendentes.delete(r.id);
+    resolver(new Response([204, 304].includes(r.status) ? null : Buffer.from(r.body, 'base64'), { status: r.status, headers: r.headers }));
+  });
+  t.after(() => { ponte.stdin.end(); });
+  const buscar = (url, opcoes = {}) => new Promise((resolve) => {
+    const id = proximo++;
+    pendentes.set(id, resolve);
+    ponte.stdin.write(JSON.stringify({ id, url, ...opcoes }) + '\n');
+  });
   const html = await readFile(new URL("../templates/index.html", import.meta.url), "utf8");
   const js = await readFile(new URL("../static/painel.js", import.meta.url), "utf8");
   const elementos = new Map([...html.matchAll(/id="([^"]+)"/g)].map((match) => [match[1], new Elemento()]));
@@ -52,7 +70,7 @@ test("controles, confirmação por pessoa e coleta usando o JavaScript do painel
     setTimeout: () => 1, clearTimeout: () => {},
     fetch: async (url, opcoes) => {
       chamadas.push(url);
-      return fetch("http://127.0.0.1:5001" + url, opcoes);
+      return buscar(url, opcoes);
     },
   });
   vm.runInContext(js, contexto, { filename: "painel.js" });

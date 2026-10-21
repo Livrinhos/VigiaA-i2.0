@@ -17,7 +17,7 @@ from uuid import uuid4
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 
 from epi_monitoramento import (
-    EPIS, MotorAlertas, classificar_postura, enriquecer_rosto, identificar_epi,
+    EPIS, MotorAlertas, classificar_postura, enriquecer_rosto, identificar_epi, identificar_ausencia,
     mapear_pontos_pose, regiao_pose,
 )
 
@@ -39,6 +39,9 @@ CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", "1"))
 COOLDOWN = max(0, float(os.getenv("COOLDOWN_SEGUNDOS", "60")))
 CONFIRMACAO_EPI = max(1, float(os.getenv("EPI_CONFIRMACAO_SEGUNDOS", "3")))
 CONFIRMACAO_QUEDA = max(1, float(os.getenv("QUEDA_CONFIRMACAO_SEGUNDOS", "2")))
+CHAO_Y = float(os.environ['QUEDA_CHAO_Y']) if os.getenv('QUEDA_CHAO_Y') else None
+if CHAO_Y is not None and not 0 <= CHAO_Y <= 1:
+    raise ValueError('QUEDA_CHAO_Y deve estar entre 0 e 1, ou ficar vazio.')
 
 
 def localizar_modelo_epi():
@@ -46,18 +49,16 @@ def localizar_modelo_epi():
     principal = principal if principal.is_absolute() else BASE / principal
     if principal.is_file():
         return principal
-    candidatos = sorted(
-        (BASE / "runs" / "detect").glob("treinamento_epi*/weights/best.pt"),
-        key=lambda caminho: caminho.stat().st_mtime, reverse=True,
-    )
-    return candidatos[0] if candidatos else None
+    # Não promove um experimento recente automaticamente quando epi.pt faltar.
+    referencia = BASE / 'runs/detect/treinamento_epi-2/weights/best.pt'
+    return referencia if not os.getenv('EPI_MODEL_PATH') and referencia.is_file() else None
 
 
 MODELO_EPI = localizar_modelo_epi()
 
 
 def localizar_modelo_oculos():
-    # Modelo já comparado neste projeto; configurável sem substituir epi.pt.
+    # Peso auxiliar original; benefício deve ser avaliado com dados independentes.
     caminho = Path(os.getenv("OCULOS_MODEL_PATH", "runs/detect/treinamento_epi-2/weights/best.pt"))
     caminho = caminho if caminho.is_absolute() else BASE / caminho
     return caminho if caminho.is_file() else None
@@ -71,10 +72,22 @@ def extrair_deteccoes_epi(resultados, piso_oculos=0.5):
     for resultado in resultados:
         for box, classe, conf in zip(resultado.boxes.xyxy, resultado.boxes.cls, resultado.boxes.conf):
             nome = resultado.names[int(classe)]
-            minimo = piso_oculos if identificar_epi(nome) == "oculos" else 0.5
+            item = identificar_epi(nome) or identificar_ausencia(nome)
+            if item is None:
+                continue
+            minimo = piso_oculos if item == "oculos" else 0.5
             if float(conf) >= minimo:
                 deteccoes.append({"caixa": tuple(box.tolist()), "classe": nome, "confianca": float(conf)})
     return deteccoes
+
+
+def salvar_jpeg(arquivo, quadro):
+    """Grava em caminhos Windows com acentos, aceitos pelo pathlib."""
+    import cv2
+    ok, buffer = cv2.imencode('.jpg', quadro)
+    if not ok:
+        raise OSError('Não foi possível codificar a imagem da ocorrência.')
+    Path(arquivo).write_bytes(buffer.tobytes())
 
 
 def abrir_camera(indice):
@@ -90,19 +103,21 @@ def abrir_camera(indice):
 
 
 class Monitor:
-    def __init__(self, base=BASE, modelo_epi=MODELO_EPI, modelo_oculos=MODELO_OCULOS):
+    def __init__(self, base=BASE, modelo_epi=MODELO_EPI, modelo_oculos=MODELO_OCULOS, fonte_video=None):
         self.base = Path(base)
         self.capturas = self.base / "capturas"
         self.coleta = self.base / "amostras_epi" / "pendentes"
         self.config = self.base / "config_epi.json"
         self.modelo_epi = Path(modelo_epi) if modelo_epi else None
         self.modelo_oculos = Path(modelo_oculos) if modelo_oculos else None
+        self.fonte_video = Path(fonte_video).resolve() if fonte_video else None
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.thread = None
         self.frame = None
         self.frame_original = None
         self.frame_instante = None
+        self.frame_capturado_em = None
         self.eventos = deque(maxlen=30)
         self.epi_obrigatorio = []
         self.confirmacao_epi = CONFIRMACAO_EPI
@@ -119,7 +134,7 @@ class Monitor:
                     self.confirmacao_epi = segundos
         except (OSError, ValueError, TypeError):
             pass
-        self.motor = MotorAlertas(self.confirmacao_epi, CONFIRMACAO_QUEDA, COOLDOWN)
+        self.motor = MotorAlertas(self.confirmacao_epi, CONFIRMACAO_QUEDA, COOLDOWN, chao_y=CHAO_Y)
         self.status = {
             "executando": False, "estado": "parado", "mensagem": "Monitoramento parado.",
             "camera": CAMERA_INDEX, "deteccoes": [], "fps": 0,
@@ -161,8 +176,9 @@ class Monitor:
             if self.thread and self.thread.is_alive():
                 return False, "O monitoramento já está em execução ou parando."
             self.stop.clear()
-            self.motor = MotorAlertas(self.confirmacao_epi, CONFIRMACAO_QUEDA, COOLDOWN)
+            self.motor = MotorAlertas(self.confirmacao_epi, CONFIRMACAO_QUEDA, COOLDOWN, chao_y=CHAO_Y)
             self.frame = self.frame_original = self.frame_instante = None
+            self.frame_capturado_em = None
             self.status.update(executando=True, estado="iniciando", mensagem="Abrindo câmera e carregando modelos.",
                                deteccoes=[], epi_ativo=False, epi_erro=None, epis_suportados=[],
                                oculos_ativo=False, oculos_erro=None, aviso=None,
@@ -204,9 +220,9 @@ class Monitor:
                 self.status["processamento_segundos"] = round(processamento_segundos, 2)
                 self.status["aviso_desempenho"] = (
                     f"Processamento lento ({processamento_segundos:.1f} s/quadro). "
-                    "A confirmação exige três observações e pode demorar mais; "
-                    "intervalos acima de 10 s interrompem a confirmação."
-                    if processamento_segundos > 2 else None
+                    "Intervalos acima de 1,25 s interrompem a trajetória de emergência; "
+                    "não há confirmação segura de movimento em baixo FPS."
+                    if processamento_segundos > 1.25 else None
                 )
             return self.motor.avaliar(
                 caixas, pontos, deteccoes_epi, self.epi_obrigatorio, suportados, quadro.shape, agora,
@@ -221,21 +237,26 @@ class Monitor:
         with self.lock:
             self.frame = buffer.tobytes()
             self.frame_original = original.copy()
-            self.frame_instante = time.monotonic()
+            self.frame_instante = self.frame_capturado_em if self.frame_capturado_em is not None else time.monotonic()
             self.status.update(deteccoes=pessoas, fps=round(fps, 1))
 
     def alerta(self, quadro, evento, agora):
         import cv2
         try:
-            self.capturas.mkdir(parents=True, exist_ok=True)
-            instante = datetime.now()
-            arquivo = self.capturas / f"{evento['tipo']}_{instante:%Y%m%d_%H%M%S_%f}_{uuid4().hex[:6]}.jpg"
-            if not cv2.imwrite(str(arquivo), quadro):
-                raise OSError("Não foi possível salvar a imagem da ocorrência.")
+            instante = datetime.now().astimezone()
+            arquivo = None
+            if os.getenv('SALVAR_IMAGEM_OCORRENCIA', '1') == '1':
+                self.capturas.mkdir(parents=True, exist_ok=True)
+                arquivo = self.capturas / f"{evento['tipo']}_{instante:%Y%m%d_%H%M%S_%f}_{uuid4().hex[:6]}.jpg"
+                salvar_jpeg(arquivo, quadro)
             registro = {
-                "data": instante.strftime("%d/%m/%Y %H:%M:%S"), "arquivo": arquivo.name,
+                "data": instante.strftime("%d/%m/%Y %H:%M:%S"), "instante": instante.isoformat(),
+                "arquivo": arquivo.name if arquivo else None,
                 "motivo": evento["motivo"], "tipo": evento["tipo"],
                 "pessoa_id": evento["pessoa_id"], "email": "aguardando envio",
+                'classificacao': evento.get('classificacao', evento['tipo']),
+                'confirmacao': evento.get('confirmacao', 'verificacao_humana_pendente'),
+                'epis': evento.get('epis', []),
             }
             with self.lock:
                 self.eventos.appendleft(registro)
@@ -244,8 +265,15 @@ class Monitor:
         except OSError as erro:
             with self.lock:
                 self.status["aviso"] = str(erro)
+                temporal = self.motor.temporais.get(evento['pessoa_id'])
+                if temporal and evento['tipo'] == 'queda':
+                    temporal.emitiu = False  # Permite tentar registrar no quadro seguinte.
 
     def email(self, evento, arquivo):
+        if os.getenv('VIGIAAI_TESTE', '0') == '1' or os.getenv('NOTIFICACOES_ATIVAS', '1') != '1':
+            with self.lock:
+                evento['email'] = 'simulação; sem envio'
+            return
         host, remetente, destino, senha = (
             os.getenv(chave) for chave in ("SMTP_HOST", "EMAIL_REMETENTE", "EMAIL_DESTINATARIO", "SMTP_SENHA")
         )
@@ -258,8 +286,9 @@ class Monitor:
             mensagem["Subject"] = "Alerta VigiaAI"
             mensagem["From"] = remetente
             mensagem["To"] = destino
-            mensagem.set_content(f"{evento['motivo']}\nData: {evento['data']}\nImagem anexada.")
-            mensagem.add_attachment(arquivo.read_bytes(), maintype="image", subtype="jpeg", filename=arquivo.name)
+            mensagem.set_content(f"{evento['motivo']}\nData: {evento['data']}\nConfirmação: {evento.get('confirmacao', 'verificação humana pendente')}.")
+            if arquivo is not None:
+                mensagem.add_attachment(arquivo.read_bytes(), maintype="image", subtype="jpeg", filename=arquivo.name)
             with smtplib.SMTP_SSL(host, int(os.getenv("SMTP_PORTA", "465")),
                                   timeout=15, context=ssl.create_default_context()) as smtp:
                 smtp.login(remetente, senha)
@@ -287,8 +316,7 @@ class Monitor:
         instante = datetime.now()
         nome = f"amostra_{instante:%Y%m%d_%H%M%S_%f}_{uuid4().hex[:6]}"
         arquivo = self.coleta / f"{nome}.jpg"
-        if not cv2.imwrite(str(arquivo), quadro):
-            raise OSError("Não foi possível salvar a amostra.")
+        salvar_jpeg(arquivo, quadro)
         metadados = {
             "data": instante.isoformat(timespec="seconds"), "camera": CAMERA_INDEX,
             "imagem": arquivo.name, "largura": quadro.shape[1], "altura": quadro.shape[0],
@@ -311,9 +339,15 @@ class Monitor:
         try:
             import cv2
             import mediapipe as mp
+            os.environ.setdefault('YOLO_CONFIG_DIR', str(self.base / 'diagnosticos' / 'ultralytics'))
             from ultralytics import YOLO
 
-            camera = abrir_camera(CAMERA_INDEX)
+            from runtime_ia import opcoes_inferencia
+            inferencia = opcoes_inferencia()
+            with self.lock:
+                self.status['dispositivo'] = str(inferencia['device'])
+
+            camera = cv2.VideoCapture(str(self.fonte_video)) if self.fonte_video else abrir_camera(CAMERA_INDEX)
             if not camera.isOpened():
                 raise RuntimeError(f"Não foi possível abrir a câmera {CAMERA_INDEX}.")
             modelo = YOLO(str(BASE / "yolov8n.pt"))
@@ -350,23 +384,33 @@ class Monitor:
                     if not self.stop.is_set():
                         self.status.update(estado="ativo", mensagem="Monitoramento ativo.")
                 falhas = 0
+                quadros_lidos = 0
+                fps_video = camera.get(cv2.CAP_PROP_FPS) if self.fonte_video else None
+                if self.fonte_video and (not fps_video or not 0 < fps_video < 1000):
+                    raise RuntimeError('Vídeo sem FPS válido; não é possível avaliar movimento no tempo.')
                 while not self.stop.is_set():
                     inicio = time.monotonic()
                     ok, quadro = camera.read()
                     if not ok:
+                        if self.fonte_video:
+                            break
                         falhas += 1
                         if falhas >= 5:
                             raise RuntimeError("A câmera não está fornecendo imagens. Confira conexão e aplicativos usando a câmera.")
                         self.stop.wait(0.2)
                         continue
                     falhas = 0
-                    capturado_em = time.monotonic()
+                    capturado_relogio = time.monotonic()
+                    self.frame_capturado_em = capturado_relogio
+                    capturado_em = quadros_lidos / fps_video if self.fonte_video else capturado_relogio
+                    quadros_lidos += 1
+                    self.video_tempo = capturado_em
                     original = cv2.flip(quadro, 1)
                     caixas = []
                     pontos = []
                     with self.lock:
                         obrigatorios = list(self.epi_obrigatorio)
-                    for resultado in modelo(original, classes=[0], conf=0.5, verbose=False):
+                    for resultado in modelo(original, classes=[0], conf=0.5, verbose=False, **inferencia):
                         for box in resultado.boxes.xyxy:
                             x1, y1, x2, y2 = map(int, box.tolist())
                             caixa = (max(0, x1), max(0, y1), min(original.shape[1], x2), min(original.shape[0], y2))
@@ -384,6 +428,9 @@ class Monitor:
                                 mapear_pontos_pose(resultado_pose.pose_landmarks.landmark, recorte_pose, caixa)
                                 if resultado_pose.pose_landmarks else {}
                             )
+                            cabeca = recorte[:max(1, recorte.shape[0] // 3)]
+                            cinza = cv2.cvtColor(cabeca, cv2.COLOR_BGR2GRAY)
+                            landmarks['_imagem_adequada'] = float(cinza.mean()) >= 35 and float(cinza.std()) >= 8
                             if "oculos" in obrigatorios:
                                 faces = []
                                 if detector_rosto is not None:
@@ -406,12 +453,12 @@ class Monitor:
                                 landmarks = enriquecer_rosto(landmarks, faces)
                             pontos.append(landmarks)
                     deteccoes_epi = []
-                    verificar = bool(obrigatorios)
+                    verificar = bool(obrigatorios and caixas)
                     if modelo_epi is not None and verificar:
                         try:
                             piso = 0.15 if "oculos" in obrigatorios else 0.5
                             deteccoes_epi.extend(extrair_deteccoes_epi(
-                                modelo_epi(original, conf=piso, verbose=False), piso_oculos=piso
+                                modelo_epi(original, conf=piso, verbose=False, **inferencia), piso_oculos=piso
                             ))
                         except Exception as erro:
                             modelo_epi = None
@@ -427,11 +474,12 @@ class Monitor:
                                 modelo_oculos = None
                                 with self.lock:
                                     self.status["oculos_erro"] = f"Verificação adicional indisponível ({type(erro).__name__})."
-                    if modelo_oculos is not None and "oculos" in obrigatorios:
+                    if modelo_oculos is not None and "oculos" in obrigatorios and caixas:
                         try:
-                            classes = [indice for indice, nome in modelo_oculos.names.items() if identificar_epi(nome) == "oculos"]
+                            classes = [indice for indice, nome in modelo_oculos.names.items()
+                                       if (identificar_epi(nome) or identificar_ausencia(nome)) == "oculos"]
                             deteccoes_epi.extend(extrair_deteccoes_epi(
-                                modelo_oculos(original, classes=classes, conf=0.15, verbose=False), piso_oculos=0.15
+                                modelo_oculos(original, classes=classes, conf=0.15, verbose=False, **inferencia), piso_oculos=0.15
                             ))
                         except Exception as erro:
                             modelo_oculos = None
@@ -443,7 +491,7 @@ class Monitor:
                             suportados.add("oculos")
                         self.status.update(epi_ativo=bool(suportados), epis_suportados=sorted(suportados),
                                            oculos_ativo=modelo_oculos is not None)
-                    processamento = time.monotonic() - capturado_em
+                    processamento = time.monotonic() - capturado_relogio
                     agora = capturado_em
                     pessoas, alertas = self.processar_deteccoes(
                         original, caixas, pontos, deteccoes_epi, agora,
@@ -455,7 +503,7 @@ class Monitor:
                         cor = (50, 70, 230) if alerta else (70, 190, 100)
                         x1, y1, x2, y2 = pessoa["caixa"]
                         cv2.rectangle(anotado, (x1, y1), (x2, y2), cor, 2)
-                        texto = f"Pessoa {pessoa['id']} | {pessoa['postura'] or 'Postura inconclusiva'}"
+                        texto = f"Pessoa {pessoa['id']} | {pessoa['situacao_rotulo']}"
                         if pessoa["epi_faltando"]:
                             texto += " | Possivel ausencia: " + ", ".join(pessoa["epi_faltando"])
                         cv2.putText(anotado, texto, (x1, max(24, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, cor, 2)

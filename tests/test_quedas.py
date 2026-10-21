@@ -108,14 +108,15 @@ class TestQuedaComputadorLento(unittest.TestCase):
             (720, 1280, 3), agora, processamento_segundos=processamento,
         )
 
-    def test_quadros_lentos_mantem_id_e_confirmam_em_tres_observacoes(self):
+    def test_quadros_lentos_mantem_id_sem_inventar_continuidade(self):
         motor = MotorAlertas()
         ids = []
         for agora in (0, 3, 6):
             pessoas, alertas = self.avaliar(motor, agora, 3)
             ids.append(pessoas[0]["id"])
         self.assertEqual(ids, [1, 1, 1])
-        self.assertEqual([a["tipo"] for a in alertas], ["queda"])
+        self.assertFalse(alertas)
+        self.assertFalse(pessoas[0]['queda_confirmada'])
 
     def test_intervalo_grande_sem_processamento_lento_reinicia(self):
         motor = MotorAlertas()
@@ -192,7 +193,7 @@ class TestIntegracaoQuedaLenta(unittest.TestCase):
             monitor.status["executando"] = True
             camera = Camera()
             mp = SimpleNamespace(solutions=SimpleNamespace(pose=SimpleNamespace(Pose=lambda **_: Pose())))
-            with patch("main.abrir_camera", return_value=camera), patch("main.time", SimpleNamespace(
+            with patch('runtime_ia.opcoes_inferencia', return_value={'device': 'cpu', 'half': False, 'imgsz': 640}), patch("main.abrir_camera", return_value=camera), patch("main.time", SimpleNamespace(
                 monotonic=lambda: relogio[0]
             )), patch.dict("sys.modules", {
                 "mediapipe": mp, "ultralytics": SimpleNamespace(YOLO=lambda _: Modelo())
@@ -204,9 +205,8 @@ class TestIntegracaoQuedaLenta(unittest.TestCase):
             self.assertEqual(monitor.status["estado"], "parado", monitor.status["mensagem"])
             self.assertEqual(monitor.status["deteccoes"][0]["postura"], "Deitada")
             self.assertEqual(monitor.status["deteccoes"][0]["id"], 1)
-            self.assertTrue(monitor.status["deteccoes"][0]["queda_confirmada"])
-            self.assertEqual(alerta.call_count, 1)
-            self.assertEqual(alerta.call_args.args[1]["tipo"], "queda")
+            self.assertFalse(monitor.status["deteccoes"][0]["queda_confirmada"])
+            self.assertEqual(alerta.call_count, 0)
             self.assertEqual(processar.call_args.args[4], 6)
             self.assertEqual(processar.call_args.kwargs["processamento_segundos"], 3)
 
