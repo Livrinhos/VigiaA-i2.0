@@ -1,0 +1,10 @@
+# Sem caminho absoluto: imagens e anotações ficam ao lado deste YAML.
+train: images/train
+val: images/val
+
+names:
+  0: capacete
+  1: colete
+  2: oculos
+  3: luvas
+  4: mascara

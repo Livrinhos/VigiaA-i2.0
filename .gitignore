@@ -1,0 +1,43 @@
+# Ambientes e caches: recriados no computador de destino.
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Credenciais e configurações privadas. Apenas o exemplo pode ser publicado.
+.env
+.env.*
+!.env.example
+config_epi.json
+
+# Fotos, evidências e dados de treinamento não são publicados.
+capturas/
+amostras_epi/
+diagnosticos/
+backups/
+video/
+dataset_epi/*
+!dataset_epi/data.yaml
+
+# Publicar somente os três pesos necessários para esta versão.
+*.pt
+!/epi.pt
+!/yolov8n.pt
+runs/*
+!runs/detect/
+runs/detect/*
+!runs/detect/treinamento_epi-2/
+runs/detect/treinamento_epi-2/*
+!runs/detect/treinamento_epi-2/weights/
+runs/detect/treinamento_epi-2/weights/*
+!/runs/detect/treinamento_epi-2/weights/best.pt
+
+# Arquivos locais de editor, instalação e sistema.
+.vscode/
+.idea/
+wheelhouse/
+*.log
+Thumbs.db
+.DS_Store

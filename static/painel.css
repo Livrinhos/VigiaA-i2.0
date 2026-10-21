@@ -1,0 +1,60 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #e7edf6; background: #0c1421; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1240px; margin: auto; padding: 30px 24px 50px; }
+header, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+header { margin-bottom: 24px; }
+h1 { margin: 4px 0 8px; font-size: clamp(24px, 3vw, 34px); letter-spacing: -.6px; }
+h2 { margin: 0 0 16px; font-size: 18px; }
+p { line-height: 1.5; margin: 8px 0; }
+.eyebrow { color: #7bc6ff; font-size: 12px; font-weight: 750; letter-spacing: 3px; }
+.muted { color: #a2b2c9; }
+.small { font-size: 13px; }
+.card { background: #152133; border: 1px solid #283a50; padding: 22px; border-radius: 12px; margin-bottom: 20px; min-width: 0; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(285px, 1fr); gap: 20px; }
+.layout .card { margin: 0 0 20px; }
+.controls p { margin-bottom: 0; }
+button { cursor: pointer; border: 1px solid #4c647f; background: #23364e; color: #f6faff; padding: 11px 16px; border-radius: 7px; font-weight: 650; }
+button:hover:not(:disabled) { background: #314b6b; }
+button:disabled { cursor: default; opacity: .45; }
+.primary { background: #2375b9; border-color: #398dd1; }
+.primary:hover:not(:disabled) { background: #2d88d0; }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid #8ed7ff; outline-offset: 3px; }
+.controls button { margin: 0 8px 6px 0; }
+.badge { display: inline-block; background: #273a52; color: #cdd9ea; border-radius: 20px; font-size: 12px; padding: 6px 12px; white-space: nowrap; }
+.badge.ativo, .item-presente { background: #174735; color: #b3efd4; }
+.badge.erro, .item-possivel_ausencia { background: #593037; color: #ffd0d3; }
+.item-observando { background: #4d4022; color: #f5dfa4; }
+.video { background: #080e17; min-height: 280px; aspect-ratio: 16/9; display: grid; place-items: center; border-radius: 8px; overflow: hidden; }
+.video img { width: 100%; height: 100%; object-fit: contain; }
+.video p { color: #8496ae; padding: 20px; text-align: center; }
+[hidden] { display: none !important; }
+.section-heading h2 { margin-bottom: 8px; }
+.section-heading { margin-bottom: 12px; }
+.checklist { border: 0; padding: 0; margin: 0 0 18px; display: grid; gap: 12px; }
+.checklist label { display: flex; align-items: center; gap: 9px; }
+input[type=checkbox] { width: 18px; height: 18px; accent-color: #72bfff; }
+.field { display: flex; flex-direction: column; gap: 8px; font-size: 13px; margin-bottom: 16px; }
+input[type=number], input[type=text] { border: 1px solid #465c77; background: #0d1828; border-radius: 6px; padding: 10px; color: #edf6ff; font: inherit; }
+input[type=number] { width: 72px; margin-right: 5px; }
+input[type=text] { width: 100%; }
+.pessoas { display: flex; flex-wrap: wrap; gap: 12px; }
+.pessoa { border: 1px solid #344962; background: #101c2c; padding: 14px; border-radius: 8px; flex: 1 1 260px; }
+.pessoa h3 { margin: 0 0 8px; font-size: 15px; }
+.pessoa .badge { margin: 4px 4px 0 0; white-space: normal; }
+.coleta-form { display: flex; align-items: end; gap: 14px; margin-top: 18px; }
+.coleta-form label { flex: 1; margin-bottom: 0; }
+.coleta-form button { min-height: 40px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-top: 18px; }
+.gallery a { color: #b4d9fa; text-decoration: none; overflow-wrap: anywhere; font-size: 11px; }
+.gallery img { width: 100%; aspect-ratio: 16/10; border-radius: 6px; object-fit: cover; display: block; margin-bottom: 6px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+td, th { padding: 13px 10px; text-align: left; border-bottom: 1px solid #2b4059; vertical-align: top; }
+th { color: #a6b8cf; font-weight: 600; }
+a { color: #8ecfff; }
+.table-wrap { overflow-x: auto; }
+.feedback { border: 1px solid #357798; padding: 12px 16px; background: #143146; border-radius: 8px; margin-bottom: 18px; }
+.feedback.erro { background: #45262d; border-color: #8f4f5e; }
+.separator { padding: 0 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 800px) { .layout { grid-template-columns: 1fr; gap: 0; } header { align-items: start; } .coleta-form { align-items: stretch; flex-direction: column; } main { padding: 20px 14px; } .section-heading { align-items: start; } }

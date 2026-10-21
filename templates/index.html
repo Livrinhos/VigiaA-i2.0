@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VigiaAI · Monitoramento</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='painel.css') }}">
+  <script src="{{ url_for('static', filename='painel.js') }}" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div><p class="eyebrow">VIGIAAI</p><h1>Monitoramento de pessoas</h1>
+    <p class="muted">Quedas, verificação de EPI e coleta de imagens para treinamento.</p></div>
+    <span id="estado" class="badge">Conectando</span>
+  </header>
+  <div id="feedback" class="feedback" role="status" hidden></div>
+  <section class="card controls" aria-label="Controles do monitoramento">
+    <div><button id="iniciar" type="button" class="primary">Iniciar monitoramento</button>
+    <button id="parar" type="button" disabled>Parar</button></div>
+    <p id="mensagem">Consultando o sistema…</p>
+    <p class="muted">Câmera <span id="camera">—</span> <span class="separator">·</span> <span id="fps">0</span> quadros/s</p>
+  </section>
+  <div class="layout">
+    <section class="card camera-card" aria-label="Visualização da câmera">
+      <div class="section-heading"><h2>Câmera ao vivo</h2><span id="imagemEstado" class="muted">Aguardando início</span></div>
+      <div class="video">
+        <img id="imagemCamera" alt="Último quadro processado da câmera" hidden>
+        <p id="imagemEspera">Inicie o monitoramento para visualizar a câmera.</p>
+      </div>
+      <p class="muted small">Os números identificam pessoas temporariamente durante esta sessão.</p>
+    </section>
+    <section class="card" aria-labelledby="politicaTitulo">
+      <h2 id="politicaTitulo">EPIs obrigatórios</h2>
+      <form id="formEpi">
+        <fieldset class="checklist"><legend class="sr-only">Selecione os itens exigidos</legend>
+          <label><input type="checkbox" name="epi" value="capacete"> Capacete</label>
+          <label><input type="checkbox" name="epi" value="colete"> Colete refletivo</label>
+          <label><input type="checkbox" name="epi" value="oculos"> Óculos de proteção</label>
+          <label><input type="checkbox" name="epi" value="luvas"> Luvas</label>
+          <label><input type="checkbox" name="epi" value="mascara"> Máscara</label>
+        </fieldset>
+        <label class="field">Confirmar possível ausência após
+          <span><input id="confirmacao" type="number" min="1" max="30" step="1" value="3" required> segundos</span>
+        </label>
+        <button id="salvarEpi" type="submit">Salvar política</button>
+      </form>
+      <p id="epiStatus" class="muted small">Aguardando o detector.</p>
+      <p class="muted small">A confirmação exige vários quadros da mesma pessoa e uma região visível. “Inconclusivo” não gera alerta de EPI.</p>
+    </section>
+  </div>
+  <section class="card" aria-labelledby="pessoasTitulo">
+    <div class="section-heading"><h2 id="pessoasTitulo">Pessoas em observação</h2><span class="muted small">Atualização automática</span></div>
+    <div id="pessoas" class="pessoas"><p class="muted">Nenhuma pessoa em observação.</p></div>
+  </section>
+  <section class="card" aria-labelledby="coletaTitulo">
+    <div class="section-heading"><div><h2 id="coletaTitulo">Coletar imagens reais</h2>
+      <p class="muted small">Fotos originais, sem caixas ou textos do painel. As amostras aguardam revisão e anotação.</p></div>
+      <span id="totalAmostras" class="badge">0 amostras</span></div>
+    <form id="formColeta" class="coleta-form">
+      <label class="field">Observação da cena (opcional)
+        <input id="observacao" type="text" maxlength="300" placeholder="Ex.: com capacete e colete, iluminação lateral">
+      </label>
+      <button id="coletar" type="submit" class="primary" disabled>Coletar foto da câmera</button>
+    </form>
+    <p class="muted small">Varie as pessoas, os EPIs, a distância e a iluminação. Coletar uma foto não dispara e-mail nem inicia treinamento.</p>
+    <div id="amostras" class="gallery"></div>
+  </section>
+  <section class="card" aria-labelledby="eventosTitulo">
+    <h2 id="eventosTitulo">Ocorrências desta sessão</h2>
+    <div class="table-wrap"><table><thead><tr><th>Data</th><th>Ocorrência</th><th>Imagem</th><th>E-mail</th></tr></thead>
+      <tbody id="eventos"><tr><td colspan="4" class="muted">Nenhuma ocorrência registrada.</td></tr></tbody>
+    </table></div>
+  </section>
+</main>
+</body>
+</html>
