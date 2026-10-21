@@ -1,3 +1,5 @@
+> Atualização de 21/10/2026: as regras e comandos atuais estão em [Aprimoramento de IA](docs/APRIMORAMENTO_IA.md). O conteúdo datado abaixo preserva o histórico; métricas antigas não validam precisão industrial.
+
 # Confirmação por pessoa e coleta de imagens
 
 Implementação de 19/10/2026.

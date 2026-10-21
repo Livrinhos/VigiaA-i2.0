@@ -1,95 +1,21 @@
 """Audita, treina e compara um candidato de EPI sem substituir epi.pt."""
 
 import argparse
-import hashlib
 import json
+import os
 import math
 import shutil
-from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-import yaml
-from PIL import Image
+from dataset_ia import auditar_dataset
 
 BASE = Path(__file__).resolve().parent
-EXTENSOES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def caminho_local(valor):
     caminho = Path(valor)
     return caminho if caminho.is_absolute() else BASE / caminho
-
-
-def auditar_dataset(arquivo):
-    """Valida imagens, pares de labels, classes e coordenadas YOLO."""
-    dados = yaml.safe_load(arquivo.read_text(encoding="utf-8"))
-    raiz = Path(dados.get("path", arquivo.parent))
-    if not raiz.is_absolute():
-        raiz = arquivo.parent / raiz
-    names = dados["names"]
-    nomes = dict(enumerate(names)) if isinstance(names, list) else names
-    nomes = {int(chave): valor for chave, valor in nomes.items()}
-    if set(nomes) != set(range(len(nomes))):
-        raise ValueError("Os IDs de classes devem começar em 0 e ser consecutivos.")
-    resumo = {"classes": nomes, "divisoes": {}, "avisos": [], "erros": []}
-    hashes = {}
-    for divisao in ("train", "val"):
-        pasta = raiz / dados[divisao]
-        if not pasta.is_dir():
-            raise ValueError(f"Pasta {divisao} não encontrada: {pasta}")
-        imagens = sorted(p for p in pasta.iterdir() if p.suffix.lower() in EXTENSOES)
-        labels = raiz / "labels" / divisao
-        contagem = Counter()
-        for imagem in imagens:
-            with Image.open(imagem) as original:
-                pixels = original.convert("RGB")
-                assinatura = hashlib.sha256(
-                    str(pixels.size).encode() + pixels.tobytes()
-                ).hexdigest()
-                pixels.verify()
-            if assinatura in hashes:
-                anterior, divisao_anterior = hashes[assinatura]
-                texto = f"Imagem duplicada: {imagem.name} e {anterior.name}."
-                destino = "erros" if divisao_anterior != divisao else "avisos"
-                resumo[destino].append(texto)
-            hashes[assinatura] = imagem, divisao
-            label = labels / f"{imagem.stem}.txt"
-            if not label.is_file():
-                resumo["erros"].append(f"Falta anotação de {imagem.name}.")
-                continue
-            for numero, linha in enumerate(label.read_text(encoding="utf-8").splitlines(), 1):
-                if not linha.strip():
-                    continue
-                try:
-                    valores = list(map(float, linha.split()))
-                    if len(valores) != 5 or not all(map(math.isfinite, valores)):
-                        raise ValueError("esperadas cinco coordenadas finitas")
-                    classe, x, y, w, h = valores
-                    if classe != int(classe) or int(classe) not in nomes:
-                        raise ValueError("classe inválida")
-                    if not (0 <= x <= 1 and 0 <= y <= 1 and 0 < w <= 1 and 0 < h <= 1):
-                        raise ValueError("coordenadas fora de [0, 1]")
-                    if min(x - w / 2, y - h / 2) < -0.001 or max(x + w / 2, y + h / 2) > 1.001:
-                        raise ValueError("caixa ultrapassa a imagem")
-                    contagem[nomes[int(classe)]] += 1
-                except ValueError as erro:
-                    resumo["erros"].append(f"{label.name}:{numero}: {erro}")
-        resumo["divisoes"][divisao] = {
-            "imagens": len(imagens),
-            "anotacoes": {nome: contagem[nome] for nome in nomes.values()},
-        }
-        if not imagens:
-            resumo["erros"].append(f"Nenhuma imagem em {divisao}.")
-        for nome in nomes.values():
-            if contagem[nome] == 0:
-                resumo["erros"].append(f"A classe {nome} não tem anotações em {divisao}.")
-    if resumo["divisoes"]["val"]["imagens"] < 30:
-        resumo["avisos"].append(
-            "Validação muito pequena. As métricas servem para comparação local, "
-            "não comprovam desempenho no monitoramento por câmera."
-        )
-    return resumo
 
 
 def metricas_dict(resultado):
@@ -100,6 +26,8 @@ def metricas_dict(resultado):
         "mAP50_95": float(resultado.box.map),
         "por_classe": {
             resultado.names[int(classe)]: {
+                'precision': float(resultado.box.p[indice]),
+                'recall': float(resultado.box.r[indice]),
                 "mAP50": float(resultado.box.ap50[indice]),
                 "mAP50_95": float(resultado.box.ap[indice]),
             }
@@ -117,22 +45,34 @@ def main():
     parser.add_argument("--taxa", type=float, default=0.0005)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--somente-auditar", action="store_true")
+    parser.add_argument('--resolucao', type=int, default=960, help='Comparar 640 e 960 usando a validação; teste fica reservado.')
+    parser.add_argument('--batch', type=int, default=4)
+    parser.add_argument('--device', default='auto')
+    parser.add_argument('--permitir-piloto', action='store_true', help='Permite amostra pequena; não comprova precisão industrial.')
+    parser.add_argument('--avaliar-teste-final', action='store_true', help='Só usar após congelar configurações na validação.')
     args = parser.parse_args()
-    if args.epocas < 1 or args.congelar < 0 or args.taxa <= 0:
+    if args.epocas < 1 or args.congelar < 0 or not math.isfinite(args.taxa) or args.taxa <= 0:
         parser.error("Épocas/taxa devem ser positivas; congelar deve ser >= 0.")
     dados = caminho_local(args.dados)
     auditoria = auditar_dataset(dados)
     print(json.dumps(auditoria, ensure_ascii=False, indent=2), flush=True)
-    if auditoria["erros"]:
-        raise ValueError("Corrija os erros do dataset antes de treinar.")
     if args.somente_auditar:
-        return
+        return 1 if auditoria['erros'] else 0
+    if auditoria["erros"] or not auditoria['grupos_verificados']:
+        raise ValueError("Corrija o dataset e informe manifesto revisado com grupos independentes antes de treinar.")
+    if any(auditoria['divisoes']['train']['anotacoes'][nome] == 0 for nome in auditoria['classes'].values()):
+        raise ValueError('Todas as classes preservadas precisam de exemplos no treino para evitar perda de funcionalidades.')
+    if not args.permitir_piloto and any(auditoria['divisoes'][s]['imagens'] < n for s, n in [('train', 100), ('val', 30), ('test', 30)]):
+        raise ValueError('Dados insuficientes para experimento padrão. --permitir-piloto identifica explicitamente um estudo pequeno.')
+    if args.resolucao < 320 or args.resolucao % 32 or args.batch < 1:
+        parser.error('Resolução deve ser múltiplo de 32 >= 320; batch deve ser positivo.')
 
     import torch
+    os.environ.setdefault('YOLO_CONFIG_DIR', str(BASE / 'diagnosticos' / 'ultralytics'))
     from ultralytics import YOLO
 
     torch.set_num_threads(4)
-    dispositivo = 0 if torch.cuda.is_available() else "cpu"
+    dispositivo = (0 if torch.cuda.is_available() else 'cpu') if args.device == 'auto' else args.device
     modelo_inicial = caminho_local(args.modelo)
     if not modelo_inicial.is_file():
         raise FileNotFoundError(f"Modelo inicial não encontrado: {modelo_inicial}")
@@ -146,14 +86,15 @@ def main():
         "dataset": auditoria,
         "modelo_inicial": str(modelo_inicial),
         "configuracao": vars(args),
-        "limitacao": "A validação existente contém apenas cinco imagens de objetos isolados. Não é um teste independente de funcionários pela câmera.",
+        "limitacao": "Métricas de imagens não comprovam desempenho industrial; teste independente reservado, sem ajuste de limiares no teste.",
         "modelo_atual_substituido": False,
     }
 
-    def validar(pesos, nome_avaliacao):
+    def validar(pesos, nome_avaliacao, split='val', classes_comuns=True):
         resultado = YOLO(str(pesos)).val(
-            data=str(dados), imgsz=640, batch=4, device=dispositivo,
+            data=str(dados), imgsz=args.resolucao, batch=args.batch, device=dispositivo, split=split,
             workers=0, plots=True, save_json=False,
+            classes=list(range(5)) if classes_comuns else None,
             project=str(pasta), name=nome_avaliacao, verbose=False,
         )
         return metricas_dict(resultado)
@@ -166,7 +107,7 @@ def main():
     )
     print("Iniciando nova rodada:", pasta, flush=True)
     YOLO(str(modelo_inicial)).train(
-        data=str(dados), epochs=args.epocas, imgsz=640, batch=4,
+        data=str(dados), epochs=args.epocas, imgsz=args.resolucao, batch=args.batch,
         device=dispositivo, workers=0, optimizer="AdamW", lr0=args.taxa,
         lrf=0.1, weight_decay=0.0005, warmup_epochs=2, warmup_bias_lr=args.taxa,
         freeze=args.congelar, patience=12, seed=args.seed,
@@ -178,6 +119,15 @@ def main():
     )
     candidato = pasta / "ajuste" / "weights" / "best.pt"
     relatorio["candidato"] = validar(candidato, "avaliacao_candidato")
+    relatorio['criterio_comparacao'] = 'Mesma divisão, resolução e classes originais 0..4. Classes extras são avaliadas separadamente no candidato.'
+    relatorio['candidato_todas_classes'] = validar(candidato, 'avaliacao_candidato_completa', classes_comuns=False)
+    relatorio['teste_independente'] = None
+    if args.avaliar_teste_final:
+        relatorio['teste_independente'] = {'candidato': validar(candidato, 'teste_candidato', 'test')}
+        relatorio['teste_candidato_todas_classes'] = validar(candidato, 'teste_candidato_completo', 'test', classes_comuns=False)
+        for nome_modelo, pesos in [('epi_original', atual), ('best_original', BASE / 'runs/detect/treinamento_epi-2/weights/best.pt')]:
+            if pesos.is_file():
+                relatorio['teste_independente'][nome_modelo] = validar(pesos, f'teste_{nome_modelo}', 'test')
     relatorio["caminho_candidato"] = str(candidato)
     baseline = relatorio.get("atual", relatorio["inicial"])
     relatorio["melhorou_na_validacao"] = (
@@ -194,4 +144,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

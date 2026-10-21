@@ -1,5 +1,9 @@
 # VigiaAI
 
+> Atualização de IA (branch `melhoria-ia`): consulte [execução, treinamento e validação](docs/APRIMORAMENTO_IA.md)
+> e [fontes de dados e permissões](docs/DATASETS_IA.md). Falta de detecção de EPI agora é inconclusiva;
+> quedas usam regras temporais. Pesos originais preservados; não há novo treinamento nem precisão industrial validada.
+
 Painel local em Flask para monitoramento por câmera, indicação de possíveis
 quedas, verificação de EPIs selecionados e notificações por e-mail.
 
@@ -15,12 +19,13 @@ a `.venv` do computador antigo. Extraia ou clone o projeto no SSD do novo PC.
 No PowerShell:
 
 ```powershell
-git clone --depth 1 https://github.com/susuque-samuel/VigiaAi.git
-cd VigiaAi
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements-cpu.txt
-.\.venv\Scripts\python.exe -m pip check
+git clone --branch melhoria-ia https://github.com/Livrinhos/VigiaA-i2.0.git
+cd VigiaA-i2.0
+py -3.12 -m venv "$env:USERPROFILE\Documents\VigiaAI-venv"
+$pythonVigia = "$env:USERPROFILE\Documents\VigiaAI-venv\Scripts\python.exe"
+& $pythonVigia -m pip install -r requirements-cuda.txt
+# Sem placa NVIDIA: use requirements-cpu.txt
+& $pythonVigia -m pip check
 Copy-Item .env.example .env
 notepad .env
 ```
@@ -32,7 +37,7 @@ Também pode transferir o `.env` antigo por um meio privado, sem publicá-lo.
 Inicie o sistema:
 
 ```powershell
-.\.venv\Scripts\python.exe main.py
+& $pythonVigia main.py
 ```
 
 Abra <http://127.0.0.1:5000> e clique em iniciar. Para escolher a câmera,
@@ -40,7 +45,7 @@ ajuste `CAMERA_INDEX` no `.env` e reinicie o servidor. Os índices podem mudar
 entre computadores. Não é necessário ativar
 a `.venv` nem alterar a política de execução do PowerShell.
 
-Os comandos acima instalam PyTorch para **CPU**. Uma placa NVIDIA só será
+Os comandos acima instalam PyTorch com **CUDA 12.4**. O ambiente deve ficar em caminho sem acentos para o MediaPipe. Uma placa NVIDIA só será
 usada com uma instalação de PyTorch/CUDA compatível com a placa e seu driver;
 não basta transferir o código. Consulte o [instalador oficial do PyTorch](https://pytorch.org/get-started/locally/)
 antes de alterar as versões de `torch` e `torchvision` deste projeto.
@@ -52,7 +57,7 @@ repositório, sem alterações locais pendentes:
 
 ```powershell
 git pull --ff-only
-.\.venv\Scripts\python.exe main.py
+& $pythonVigia main.py
 ```
 
 Depois atualize a página com `Ctrl+F5`. O `.env` e `config_epi.json` privados
@@ -74,7 +79,7 @@ Leia os limites e testes em [Monitoramento e coleta](MONITORAMENTO_E_COLETA.md#c
 | `CAMERA_INDEX` | Índice da câmera, como `0`, `1` ou `2`. Reinicie o servidor após alterar. |
 | `COOLDOWN_SEGUNDOS` | Intervalo mínimo entre alertas da mesma pessoa, tipo e EPI. |
 | `EPI_CONFIRMACAO_SEGUNDOS` | Tempo inicial para confirmar uma possível ausência. A política salva no painel tem prioridade. |
-| `QUEDA_CONFIRMACAO_SEGUNDOS` | Tempo para confirmar a postura deitada antes do alerta de possível queda. |
+| `QUEDA_CONFIRMACAO_SEGUNDOS` | Persistência após uma transição suspeita; deitar sozinho não comprova queda. |
 | `EPI_MODEL_PATH` | Opcional: caminho do modelo principal; padrão `epi.pt`. |
 | `OCULOS_MODEL_PATH` | Modelo adicional dos óculos, incluído em `runs/detect/treinamento_epi-2/weights/best.pt`. |
 | `SMTP_HOST` | Servidor SMTP, por exemplo `smtp.gmail.com`. |

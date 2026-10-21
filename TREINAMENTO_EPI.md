@@ -1,3 +1,5 @@
+> Atualização de 21/10/2026: as regras e comandos atuais estão em [Aprimoramento de IA](docs/APRIMORAMENTO_IA.md). O conteúdo datado abaixo preserva o histórico; métricas antigas não validam precisão industrial.
+
 # Treinamento de EPI
 
 O script audita as imagens e anotações, cria um backup do epi.pt,

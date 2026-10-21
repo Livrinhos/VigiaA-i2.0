@@ -38,6 +38,10 @@ runs/detect/treinamento_epi-2/weights/*
 .vscode/
 .idea/
 wheelhouse/
+.runtime-python
+Ultralytics/
+dados_privados/
+avaliacoes_privadas/
 *.log
 Thumbs.db
 .DS_Store
