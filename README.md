@@ -1,5 +1,9 @@
 # VigiaAI
 
+> **VigiaAI 2.1:** a página inicial agora é a Central de Monitoramento, com upload de vídeo, pausa,
+> busca, reinício, seleção de câmera e indicadores reais. Leia [como executar e validar](docs/CENTRAL_2_1.md).
+> O painel anterior e a coleta continuam em `/legado`. Na central, e-mails reais ficam desativados.
+
 > Atualização de IA (branch `melhoria-ia`): consulte [execução, treinamento e validação](docs/APRIMORAMENTO_IA.md)
 > e [fontes de dados e permissões](docs/DATASETS_IA.md). Falta de detecção de EPI agora é inconclusiva;
 > quedas usam regras temporais. Pesos originais preservados; não há novo treinamento nem precisão industrial validada.
@@ -19,7 +23,7 @@ a `.venv` do computador antigo. Extraia ou clone o projeto no SSD do novo PC.
 No PowerShell:
 
 ```powershell
-git clone --branch melhoria-ia https://github.com/Livrinhos/VigiaA-i2.0.git
+git clone --branch vigiaai-2.1-interface https://github.com/Livrinhos/VigiaA-i2.0.git
 cd VigiaA-i2.0
 py -3.12 -m venv "$env:USERPROFILE\Documents\VigiaAI-venv"
 $pythonVigia = "$env:USERPROFILE\Documents\VigiaAI-venv\Scripts\python.exe"
