@@ -7,6 +7,7 @@ import smtplib
 import ssl
 import threading
 import time
+import unicodedata
 from collections import deque
 from contextlib import ExitStack
 from datetime import datetime
@@ -111,6 +112,9 @@ class Monitor:
         self.modelo_epi = Path(modelo_epi) if modelo_epi else None
         self.modelo_oculos = Path(modelo_oculos) if modelo_oculos else None
         self.fonte_video = Path(fonte_video).resolve() if fonte_video else None
+        self.camera_indice = CAMERA_INDEX
+        self.controle = None
+        self.demonstracao = False
         self.lock = threading.RLock()
         self.stop = threading.Event()
         self.thread = None
@@ -171,11 +175,12 @@ class Monitor:
             confirmador.alertados = {k: v for k, v in confirmador.alertados.items() if k[1] != "epi"}
             self.status.update(epi_obrigatorio=list(itens), confirmacao_segundos=segundos)
 
-    def iniciar(self):
+    def iniciar(self, demonstracao=False):
         with self.lock:
             if self.thread and self.thread.is_alive():
                 return False, "O monitoramento já está em execução ou parando."
             self.stop.clear()
+            self.demonstracao = demonstracao
             self.motor = MotorAlertas(self.confirmacao_epi, CONFIRMACAO_QUEDA, COOLDOWN, chao_y=CHAO_Y)
             self.frame = self.frame_original = self.frame_instante = None
             self.frame_capturado_em = None
@@ -245,7 +250,7 @@ class Monitor:
         try:
             instante = datetime.now().astimezone()
             arquivo = None
-            if os.getenv('SALVAR_IMAGEM_OCORRENCIA', '1') == '1':
+            if not self.demonstracao and os.getenv('SALVAR_IMAGEM_OCORRENCIA', '1') == '1':
                 self.capturas.mkdir(parents=True, exist_ok=True)
                 arquivo = self.capturas / f"{evento['tipo']}_{instante:%Y%m%d_%H%M%S_%f}_{uuid4().hex[:6]}.jpg"
                 salvar_jpeg(arquivo, quadro)
@@ -259,9 +264,15 @@ class Monitor:
                 'epis': evento.get('epis', []),
             }
             with self.lock:
+                if self.controle and not self.controle.aceitar_evento(registro, evento, agora):
+                    self.motor.confirmador.marcar_alerta(evento['chaves'], agora)
+                    return
                 self.eventos.appendleft(registro)
                 self.motor.confirmador.marcar_alerta(evento["chaves"], agora)
-            threading.Thread(target=self.email, args=(registro, arquivo), daemon=True).start()
+            if self.demonstracao:
+                registro['email'] = 'desativado na demonstração'
+            else:
+                threading.Thread(target=self.email, args=(registro, arquivo), daemon=True).start()
         except OSError as erro:
             with self.lock:
                 self.status["aviso"] = str(erro)
@@ -270,7 +281,7 @@ class Monitor:
                     temporal.emitiu = False  # Permite tentar registrar no quadro seguinte.
 
     def email(self, evento, arquivo):
-        if os.getenv('VIGIAAI_TESTE', '0') == '1' or os.getenv('NOTIFICACOES_ATIVAS', '1') != '1':
+        if self.demonstracao or os.getenv('VIGIAAI_TESTE', '0') == '1' or os.getenv('NOTIFICACOES_ATIVAS', '1') != '1':
             with self.lock:
                 evento['email'] = 'simulação; sem envio'
             return
@@ -336,6 +347,8 @@ class Monitor:
 
     def executar(self):
         camera = None
+        quadros_lidos = 0
+        fim_video = False
         try:
             import cv2
             import mediapipe as mp
@@ -347,9 +360,9 @@ class Monitor:
             with self.lock:
                 self.status['dispositivo'] = str(inferencia['device'])
 
-            camera = cv2.VideoCapture(str(self.fonte_video)) if self.fonte_video else abrir_camera(CAMERA_INDEX)
+            camera = cv2.VideoCapture(str(self.fonte_video)) if self.fonte_video else abrir_camera(self.camera_indice)
             if not camera.isOpened():
-                raise RuntimeError(f"Não foi possível abrir a câmera {CAMERA_INDEX}.")
+                raise RuntimeError('Não foi possível abrir o vídeo.' if self.fonte_video else f"Não foi possível abrir a câmera {self.camera_indice}.")
             modelo = YOLO(str(BASE / "yolov8n.pt"))
             modelo_epi = None
             modelo_oculos = None
@@ -389,10 +402,15 @@ class Monitor:
                 if self.fonte_video and (not fps_video or not 0 < fps_video < 1000):
                     raise RuntimeError('Vídeo sem FPS válido; não é possível avaliar movimento no tempo.')
                 while not self.stop.is_set():
+                    if self.controle:
+                        quadros_lidos = self.controle.antes_quadro(camera, quadros_lidos, fps_video)
+                    if self.stop.is_set():
+                        break
                     inicio = time.monotonic()
                     ok, quadro = camera.read()
                     if not ok:
                         if self.fonte_video:
+                            fim_video = True
                             break
                         falhas += 1
                         if falhas >= 5:
@@ -405,7 +423,7 @@ class Monitor:
                     capturado_em = quadros_lidos / fps_video if self.fonte_video else capturado_relogio
                     quadros_lidos += 1
                     self.video_tempo = capturado_em
-                    original = cv2.flip(quadro, 1)
+                    original = quadro if self.fonte_video else cv2.flip(quadro, 1)
                     caixas = []
                     pontos = []
                     with self.lock:
@@ -498,16 +516,34 @@ class Monitor:
                         processamento_segundos=processamento,
                     )
                     anotado = original.copy()
+                    for epi in deteccoes_epi:
+                        if epi['confianca'] < .5:
+                            continue
+                        ex1, ey1, ex2, ey2 = map(int, epi['caixa'])
+                        cor_epi = (80, 205, 255) if identificar_ausencia(epi['classe']) else (225, 185, 60)
+                        cv2.rectangle(anotado, (ex1, ey1), (ex2, ey2), cor_epi, 1)
+                        cv2.putText(anotado, f"{epi['classe']} {epi['confianca']:.0%}",
+                                    (ex1, max(15, ey1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, .4, cor_epi, 1)
                     for pessoa in pessoas:
                         alerta = pessoa["queda_confirmada"] or pessoa["epi_faltando"]
-                        cor = (50, 70, 230) if alerta else (70, 190, 100)
+                        incerto = not pessoa['postura'] or any(e in ('inconclusivo', 'observando') for e in pessoa['epis'].values())
+                        cor = (50, 70, 230) if alerta else (90, 175, 230) if incerto else (70, 190, 100)
                         x1, y1, x2, y2 = pessoa["caixa"]
                         cv2.rectangle(anotado, (x1, y1), (x2, y2), cor, 2)
                         texto = f"Pessoa {pessoa['id']} | {pessoa['situacao_rotulo']}"
+                        texto = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode()
                         if pessoa["epi_faltando"]:
                             texto += " | Possivel ausencia: " + ", ".join(pessoa["epi_faltando"])
                         cv2.putText(anotado, texto, (x1, max(24, y1 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, cor, 2)
+                        estados = {'presente': 'detectado', 'inconclusivo': 'inconclusivo',
+                                   'observando': 'verificando', 'possivel_ausencia': 'possivel ausencia'}
+                        resumo_epi = ' | '.join(f'{item}: {estados[estado]}' for item, estado in pessoa['epis'].items())
+                        if resumo_epi:
+                            cv2.putText(anotado, resumo_epi, (x1, min(anotado.shape[0] - 8, y2 + 17)),
+                                        cv2.FONT_HERSHEY_SIMPLEX, .4, cor, 1)
                     self._publicar_frame(original, anotado, pessoas, 1 / max(time.monotonic() - inicio, 0.001))
+                    if self.controle:
+                        self.controle.apos_quadro(pessoas, deteccoes_epi, agora, processamento, quadros_lidos)
                     for evento in alertas:
                         self.alerta(anotado, evento, agora)
         except Exception as erro:
@@ -521,6 +557,8 @@ class Monitor:
                                    aviso_desempenho=None, fps=0)
                 if self.status["estado"] != "erro":
                     self.status.update(estado="parado", mensagem="Monitoramento parado.")
+            if self.controle:
+                self.controle.finalizar(fim_video, quadros_lidos)
 
 
 def criar_app(instancia=None):
@@ -536,6 +574,10 @@ def criar_app(instancia=None):
 
     @app.get("/")
     def inicio():
+        return render_template('demonstracao.html')
+
+    @app.get('/legado')
+    def legado():
         return render_template("index.html")
 
     @app.get("/status")
@@ -610,6 +652,8 @@ def criar_app(instancia=None):
             return jsonify(mensagem="Imagem não encontrada."), 404
         return send_from_directory(sistema.coleta, nome)
 
+    from central_monitoramento import registrar_central
+    registrar_central(app, sistema, abrir_camera)
     return app
 
 

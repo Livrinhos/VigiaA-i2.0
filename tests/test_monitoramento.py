@@ -221,7 +221,7 @@ class TestPainel(unittest.TestCase):
         self.temporario.cleanup()
 
     def test_pagina_e_js_estaticos(self):
-        html = self.cliente.get("/")
+        html = self.cliente.get("/legado")
         self.assertEqual(html.status_code, 200)
         self.assertIn(b"painel.js", html.data)
         self.assertNotIn(b'src="/stream"', html.data)

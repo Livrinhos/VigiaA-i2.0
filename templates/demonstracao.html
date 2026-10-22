@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>VigiaAI 2.1 · Central de Monitoramento</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='demonstracao.css') }}">
+  <script src="{{ url_for('static', filename='demonstracao.js') }}" defer></script>
+</head>
+<body>
+<svg class="svg-defs" aria-hidden="true"><defs>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3V9Z"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M8 6 10 3h4l2 3h4v14H4V6h4Z"/><circle cx="12" cy="12" r="4"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3Zm0 6v5m0 3v1"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"/></symbol>
+</defs></svg>
+<aside class="rail" aria-label="Navegação">
+  <a class="logo-icon" href="/" aria-label="VigiaAI"><svg><use href="#i-shield"/></svg></a>
+  <a class="rail-link active" href="#central" aria-label="Monitoramento" title="Monitoramento"><svg><use href="#i-video"/></svg></a>
+  <a class="rail-link" href="#historico" aria-label="Ocorrências" title="Ocorrências"><svg><use href="#i-clock"/></svg></a>
+  <a class="rail-link rail-bottom" href="/legado" title="Painel clássico" aria-label="Painel clássico">2.0</a>
+</aside>
+<div class="shell" id="central">
+  <header class="topbar">
+    <div class="brand">Vigia<span>AI</span><span class="version">2.1</span></div>
+    <div class="topbar-right"><span class="local"><i></i> Operação local</span><span id="estadoSistema" class="status-chip">Conectando</span></div>
+  </header>
+  <main>
+    <section class="page-heading">
+      <div><p class="eyebrow">VISÃO COMPUTACIONAL · SEGURANÇA INDUSTRIAL</p><h1>Central de monitoramento</h1><p class="subtitle">Pessoas, equipamentos e situações que merecem atenção. Em uma única visão.</p></div>
+      <span class="mode-tag" id="modoAtual"><svg><use href="#i-video"/></svg> Vídeo gravado</span>
+    </section>
+    <div id="feedbackCentral" class="feedback" role="status" hidden></div>
+    <section class="metrics" aria-label="Indicadores da análise">
+      <article class="metric"><span>Pessoas no quadro</span><strong id="metricaPessoas">—</strong><small>Identificadores temporários</small></article>
+      <article class="metric"><span>EPIs associados</span><strong id="metricaEpis">—</strong><small>Presença detectada por pessoa</small></article>
+      <article class="metric"><span>Inconclusivos</span><strong id="metricaInconclusivos">—</strong><small>Verificações de EPI</small></article>
+      <article class="metric metric-attention"><span>Possíveis ausências</span><strong id="metricaAusencias">—</strong><small>Evidências para verificar</small></article>
+      <article class="metric metric-attention"><span>Emergências suspeitas</span><strong id="metricaEmergencias">—</strong><small>Requerem verificação humana</small></article>
+      <article class="metric"><span>Ocorrências na sessão</span><strong id="metricaOcorrencias">—</strong><small>Histórico local em memória</small></article>
+    </section>
+    <div class="workspace">
+      <section class="monitor-panel" aria-labelledby="tituloMonitor">
+        <div class="panel-heading"><div class="panel-label"><i class="blue-dot"></i><h2 id="tituloMonitor">Área de análise</h2><span id="rotuloFonte" class="muted">Nenhuma fonte selecionada</span></div><button id="telaCheia" class="icon-button" title="Expandir visualização" aria-label="Expandir visualização"><svg><use href="#i-expand"/></svg></button></div>
+        <div class="stage" id="palcoVideo">
+          <img id="quadroProcessado" alt="Quadro do vídeo com as detecções reais do VigiaAI" hidden>
+          <div class="empty-stage" id="estadoVazio">
+            <div class="stage-symbol"><svg><use href="#i-video"/></svg></div>
+            <h3 id="tituloVazio">Seu vídeo, sob uma nova perspectiva.</h3>
+            <p id="textoVazio">Selecione uma gravação para acompanhar pessoas, EPIs e possíveis ocorrências.</p>
+            <button id="selecionarNoPalco" class="primary"><svg><use href="#i-upload"/></svg> Selecionar vídeo</button>
+            <small>Processamento no computador que executa o VigiaAI.</small>
+          </div>
+          <div class="stage-hud" id="hudQuadro" hidden><span id="tipoQuadro">PRÉVIA · IA NÃO INICIADA</span><span id="fpsOverlay">— fps</span></div>
+          <div class="stage-caption" id="legendaQuadro" hidden>Imagens reais da fonte selecionada · sem diagnóstico médico</div>
+        </div>
+        <div class="transport">
+          <div class="transport-buttons"><button id="iniciarAnalise" class="primary" disabled>▶ Iniciar análise</button><button id="pausarAnalise" disabled>Ⅱ Pausar</button><button id="reiniciarAnalise" class="quiet" disabled>↻ Reiniciar</button><button id="encerrarAnalise" class="quiet" disabled>■ Encerrar</button></div>
+          <span id="tempoVideo" class="timecode">00:00 / 00:00</span>
+        </div>
+        <div class="timeline"><input type="range" id="linhaTempo" min="0" max="1" step="0.1" value="0" disabled aria-label="Navegar no tempo do vídeo"><div><span id="progressoTexto">Aguardando vídeo</span><span id="quadrosTexto">Nenhum quadro analisado</span></div></div>
+        <div class="performance"><span><i class="blue-dot"></i><span id="mensagemSistema">Consultando o sistema…</span></span><div><span id="tempoIA">IA acumulada: —</span><span id="dispositivoIA">Dispositivo: —</span></div></div>
+      </section>
+      <aside class="sidebar">
+        <section class="side-panel source-panel"><div class="section-title"><h2>Fonte de monitoramento</h2><span class="step">01</span></div>
+          <div class="source-switch" role="group" aria-label="Modo de monitoramento"><button id="modoVideo" class="selected" aria-pressed="true"><svg><use href="#i-video"/></svg> Vídeo gravado</button><button id="modoCamera" aria-pressed="false"><svg><use href="#i-camera"/></svg> Câmera ao vivo</button></div>
+          <div id="opcoesVideo"><div id="areaUpload" class="dropzone" tabindex="0" role="button" aria-label="Selecionar ou arrastar um vídeo"><svg><use href="#i-upload"/></svg><strong>Arraste um vídeo aqui</strong><span>ou <b>selecione um arquivo</b></span><small id="formatosUpload">MP4, AVI, MOV, MKV, WebM · até 512 MB</small></div>
+            <input id="arquivoVideo" type="file" accept=".mp4,.avi,.mov,.mkv,.webm" hidden><progress id="progressoUpload" max="100" value="0" hidden aria-label="Progresso de envio"></progress><div id="informacoesVideo" class="source-info" hidden></div>
+          </div>
+          <div id="opcoesCamera" hidden><p class="muted small">Câmeras acessíveis ao computador que executa o Flask, incluindo dispositivos virtuais compatíveis.</p><button id="buscarCameras" class="full-button">Buscar câmeras</button><label class="field">Dispositivo<select id="cameraSelecionada" disabled><option value="">Busque uma câmera disponível</option></select></label><p id="cameraMensagem" class="muted small">A câmera física pode não estar acessível neste ambiente.</p></div>
+        </section>
+        <section class="side-panel"><div class="section-title"><h2>Equipamentos de proteção</h2><span class="step">02</span></div><p class="muted small">Selecione os itens que devem ser verificados.</p>
+          <form id="politicaEpi"><div class="epi-options"><label><input type="checkbox" name="epiCentral" value="capacete"> Capacete</label><label><input type="checkbox" name="epiCentral" value="oculos"> Óculos de proteção</label><label><input type="checkbox" name="epiCentral" value="colete"> Colete</label><label><input type="checkbox" name="epiCentral" value="luvas"> Luvas</label><label><input type="checkbox" name="epiCentral" value="mascara"> Máscara</label></div><div class="policy-bottom"><label>Confirmação <input id="confirmacaoEpi" type="number" min="1" max="30" value="3" aria-label="Segundos de confirmação de EPI"> s</label><button type="submit" id="salvarPolitica">Aplicar</button></div></form>
+          <p class="muted tiny" id="suporteEpi">Aguardando disponibilidade dos modelos.</p><div class="safety-note">Não detectar um item não comprova sua ausência.</div>
+        </section>
+        <section class="side-panel people-panel"><div class="section-title"><h2>Pessoas em observação</h2><span id="contagemPessoas" class="count">—</span></div><div id="pessoasCentral"><div class="empty-people"><svg><use href="#i-person"/></svg><p>Nenhuma pessoa em observação.</p><small>Os resultados aparecerão durante a análise.</small></div></div></section>
+      </aside>
+    </div>
+    <section class="history-panel" id="historico"><div class="panel-heading"><div><p class="eyebrow">LINHA DO TEMPO</p><h2>Ocorrências registradas</h2></div><div class="history-actions"><span id="totalHistorico" class="count">— eventos</span><button id="exportarHistorico" class="quiet" disabled>↓ Exportar JSON</button></div></div>
+      <div class="table-scroll"><table><thead><tr><th>TIPO / CLASSIFICAÇÃO</th><th>PESSOA</th><th>MOMENTO</th><th>MOTIVO E VERIFICAÇÃO</th><th></th></tr></thead><tbody id="historicoEventos"><tr><td colspan="5"><div class="empty-history"><svg><use href="#i-clock"/></svg><strong>Nenhuma ocorrência registrada.</strong><span>Eventos reais da análise aparecerão aqui, com seu contexto.</span></div></td></tr></tbody></table></div>
+    </section>
+    <section class="library-panel"><div><p class="eyebrow">BIBLIOTECA LOCAL</p><h2>Vídeos de demonstração</h2><p class="muted small">Gravações autorizadas, prontas para analisar com os mesmos modelos.</p></div><div id="bibliotecaVideos" class="library-list"><p class="library-empty">Nenhum vídeo cadastrado. Você já pode enviar uma gravação pelo seletor acima.</p></div></section>
+    <footer><span><svg><use href="#i-shield"/></svg> VigiaAI · Inteligência para observar. Pessoas para decidir.</span><span id="notificacoesStatus">Demonstração local · sem envio de e-mails ou fotos de ocorrências</span><a href="/legado">Painel clássico e coleta de imagens ↗</a></footer>
+  </main>
+</div>
+</body>
+</html>

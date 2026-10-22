@@ -42,6 +42,14 @@ wheelhouse/
 Ultralytics/
 dados_privados/
 avaliacoes_privadas/
+media_privada/
+biblioteca_demo/*
+!biblioteca_demo/README.md
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
 *.log
 Thumbs.db
 .DS_Store
