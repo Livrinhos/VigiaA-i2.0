@@ -599,7 +599,7 @@ def criar_app(instancia=None):
 
     @app.post("/start")
     def iniciar():
-        ok, mensagem = sistema.iniciar()
+        ok, mensagem = app.extensions['central'].iniciar_legado()
         return jsonify(ok=ok, mensagem=mensagem), 200 if ok else 409
 
     @app.post("/stop")

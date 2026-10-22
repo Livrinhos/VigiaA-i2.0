@@ -109,6 +109,7 @@ class CentralMonitoramento:
             self.sistema.fonte_video = fonte.get('caminho') if fonte['modo'] == 'video' else None
             if fonte['modo'] == 'camera':
                 self.sistema.camera_indice = fonte['indice']
+                self.sistema.status['camera'] = fonte['indice']
             self.sistema.frame = self.sistema.frame_original = None
             self.sistema.frame_instante = None
             self.sistema.status.update(estado='pronto', mensagem='Fonte pronta. Inicie a análise.', deteccoes=[], fps=0)
@@ -234,6 +235,15 @@ class CentralMonitoramento:
             self.ultimo_tick = None
             self.segmento += 1
             self.sistema.iniciar(demonstracao=True)
+
+    def iniciar_legado(self):
+        # A tela antiga participa da mesma exclusão de fontes que uploads e câmeras da central.
+        with self.acoes:
+            if self._ativo():
+                return False, 'O monitoramento já está em execução ou parando.'
+            indice = self.sistema.camera_indice
+            self._instalar(dict(id=f'camera-{indice}', modo='camera', nome=f'Câmera {indice}', indice=indice))
+            return self.sistema.iniciar()
 
     def pausar(self):
         with self.condicao:

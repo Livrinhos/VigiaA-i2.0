@@ -144,6 +144,24 @@ class TestCentral(unittest.TestCase):
         for t in (-1,4,'arquivo',True):
             self.assertEqual(self.post('/api/central/acao/buscar',{'segundos':t}).status_code,400)
 
+    def test_legado_seleciona_camera_e_preserva_exclusao_de_fontes(self):
+        self.enviar()
+        anterior=self.monitor.fonte_video
+        with patch.object(self.monitor,'iniciar',return_value=(True,'Teste')) as iniciar:
+            self.assertEqual(self.cliente.post('/start').status_code,200)
+            self.assertEqual(self.central.fonte['modo'],'camera')
+            self.assertIsNone(self.monitor.fonte_video)
+            self.assertFalse(anterior.exists())
+            iniciar.assert_called_once_with()
+
+    def test_legado_nao_troca_fonte_quando_existe_worker(self):
+        self.enviar()
+        antes=self.central.fonte['id']
+        with patch.object(self.central,'_ativo',return_value=True),patch.object(self.monitor,'iniciar') as iniciar:
+            self.assertEqual(self.cliente.post('/start').status_code,409)
+            self.assertEqual(self.central.fonte['id'],antes)
+            iniciar.assert_not_called()
+
     def test_processo_pausa_busca_reinicio_epi_e_termino(self):
         self.enviar()
         self.monitor.configurar_epi(['capacete','oculos'])
